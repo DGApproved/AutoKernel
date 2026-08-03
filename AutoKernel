@@ -1,0 +1,423 @@
+#!/bin/bash
+##################################################################################################################################
+# Sources and references Used to build this script(specifically website pages):                                                  # Except
+#                                                                                                                                #
+# https://www.cyberciti.biz/tips/compiling-linux-kernel-26.html        https://www.kernel.org/pub/linux/kernel/v6.x/             # Comment 
+# https://www.kernel.org/doc/html/v5.14/process/applying-patches.html  https://gemini.google.com/app/2da64687b354ec6a            #
+# Genini Assistance Description: Using base scripts, and prompting, download_with_check function, for ex. fully manually typed.  # Box's
+#                                                                                                                                #
+# Further Reference Material: # https://gist.github.com/Avyd/8191406 #  Note: Yes, I Manually Typed the whole script not cpy/pst # Websites.
+##################################################################################################################################
+download_with_check() 
+{
+	local url="$1"
+	local filename="$2"
+	if [ -f "$filename" ]; then
+		echo "File '$filename' already exists."
+		echo -n "Do you want to re-download/overwrite it? (y/n): "
+		read choice
+		case "$choice" in
+		y|Y )
+			echo "Re-downloading $filename..."
+			wget -O "filename" "$url"
+			;;
+		  * )
+		    echo "skipping download for $filename."
+		    ;;
+		esac
+	else
+		echo "Downloading: $url"
+		wget "$url"
+	fi
+}
+echo Script for automating Kernel Making utilities, intention for personal use only.
+echo entering su mode requires password, for making /Dev/Kernel directories... etc. 
+su
+mkdir /Dev
+mkdir /Dev/Kernel
+cd /Dev/Kernel
+show_menu() {
+	clear
+	echo "    =============================================================================================="
+	echo "   |                                Linux Kernel Build Automator                                  |"
+	echo "  |                               --------------------------------                                 |"
+	echo " |                            current version set: ${VeRSioN:-Not Set}                              |"
+	echo "======================================================================================================"
+	echo "| 0) Install Prerequisits          1) Download Files                2) Verify Files                  |"
+	echo "| 3) Unzip Files                   4) Apply patch(s)                5) Import certificates           |"
+	echo "| 6) Import Config                 7) Make Config (menuconfig)      8) Make (Compile Core)           |"
+	echo "| 9) Make Modules                 10) Modules Install              11) Install Kernel                |"
+	echo "|12) Clean-up                     13) Automate Full Sequence       14) Do su cmd / enter root shell  |"
+	echo "|15) Exit                         16) Show Build Directory         17) Install & Update Grub         |"
+	echo "|18) Set Up a Debootstrap         19) Activate a Full Chroot       20) Search for and Select Packages|"
+	echo "|21) Distro Setup Utility         22) Search For and select Driver 23) Install Driver                |"
+	echo "|24) Uninstall driver             25) Reboot Computer              26) reveal error messagee         |"
+	echo "|27) Enter a Chroot               28) Clone partition to/from .img 29) Unmount Full Chroot(?er?cmn)  |"
+	echo "======================================================================================================"
+	echo -n "Select an option [0-15]: "
+}
+while true; do
+	show_menu
+	read -r option
+	case "$option" in
+	0)
+		echo "Installing prerequisits..."
+		apt-get update
+		read -p "press enter to begin"
+		apt-get install build-essential libncurses-dev bison flex libssl-dev libelf-dev rsync wget gpg -y
+		read -p "press enter to return to menu..."
+		;;
+	1)
+		echo -n "Type the kernel version desired ex: 6.7.9: "
+		read -r VeRSioN
+		download_with_check "https://www.kernel.org/pub/linux/kernel/v6.x/linux-$VeRSioN.tar.xz" "linux-$VeRSioN.tar.xz"
+		download_with_check "https://www.kernel.org/pub/linux/kernel/v6.x/linux-$VeRSioN.tar.sign linux-$VeRSioN.tar.sign"
+		download_with_check "https://www.kernel.org/pub/linux/kernel/v6.x/patch-$VeRSioN.xz patch-$VeRSioN.xz"
+		read -p "Press enter to return to main menu..."
+		;;
+	2)
+		if [ -z "VeRSioN" ]; then
+			echo -n "type the kernel version desired ex: 6.7.9: "
+			read -r $VeRSioN
+		fi
+		echo "Checking Signature.xz:"
+		gpg --verify linux-$VeRSioN.tar.xz
+		echo "Paste or Type the Signature Key ID below and press enter:"
+		read -r SiGNaTuRe
+		echo "Checking Signature.sign:"
+		gpg --verify linux-$VeRSioN.tar.sign
+		gpg --recv-keys "$SiGNaTuRe"
+		gpg --verify linux-$VeRSioN.tar.sign
+		read -p "Verify the output above. Press enter to return to main menu..."
+		;;
+	3)
+		if [ -z "$VeRSioN" ]; then
+			echo -n "Enter kernel version first: "
+			read -r VeRSioN
+		fi
+		echo "Uncompressing..."
+		unxz -v -k linux-$VeRSioN.tar.xz
+		echo "Unarchiving..."
+		tar xvf linux-$VeRSioN.tar
+		read -p "Press enter to return to main menu"
+		;;
+	4)
+		if [ -z "$VeRSioN" ]; then
+			echo -n "Enter Kernel Version to be Used: "
+			read -r VeRSioN
+		fi
+		cd linux-$VeRSioN || exit
+		echo "(0) Auto batch mode or (1) Test and sequence mode?"
+		read -r typez
+		if [ "$typez" = "0" ]; then
+			if xzcat ../patch-$VeRSioN.xz | patch -p1 --dry-run --silent >/Dev/Kernel/$VeRSioN-patch.test 2>&1; then
+				echo "Dry run successfully attempted. Applying patch normally..."
+				xzcat ../patch-$VeRSioN.xz | patch -p1
+			else
+				echo "Applying patch safely using batch mode..."
+				xzcat ../patch-$VeRSioN.xz | patch -p1 --batch
+			fi
+		else
+			echo "Testing patch files..."
+			mv /Dev/Kernel/$VeRSioN-patch.test /Dev/Kernel/$VeRSioN-patch-old.test
+			xzcat ../patch-$VeRSioN.xz > /Dev/Kernel/temp_extracted.patch
+			grep "^\+\+\+" /Dev/Kernel/temp_extracted.patch | while read -r line; do
+				filepath=$(echo "$line" | awk '{print $2}' | sed 's|^[ab]/||')
+				if [ -n "$filepath" ]; then
+					if patch -p1 --dry-run --silent --forward --fuzz=0 -p1 < /Dev/Kernel/tmp_extracted.patch >/dev/null 2>&1; then
+						echo "$filepath: y" >> /Dev/Kernel/$VeRSioN-patch.test
+					else
+						if patch -p1 --dry-run --silent --reverse --fuzz=0 -p1 < /Dev/Kernel/temp_extracted.patch > /dev/null 2>&1; then
+							echo "$filepath: R" >> /Dev/Kernel/$VeRSioN-patch.test
+						else
+							echo "$filepath: n" >> /Dev/Kernel/$VeRSioN-patch.test
+						fi
+					fi
+				fi
+			done
+			cat /Dev/Kernel/$VeRSioN-patch.test
+			while IFS=': ' read -r file decision; do
+				if [ "$decision" = "y" ]; then
+					patch -p1 --forward < /Dev/Kernel/temp_extracted.patch
+				elif [ "$decision" = "R" ]; then
+					patch -p1 --reverse --batch < /Dev/Kernel/temp_extracted.patch
+				fi
+			done < /Dev/Kernel/$VeRSioN=patch.test
+			mv /Dev/Kernel/temp_extracted.patch /Dev/Kernel/temp_extracted-used.patch
+		fi
+		cd /Dev/Kernel || exit
+		read -p "Press enter to return to main menu..."
+		;;
+	5)
+		if [ -z "VeRSioN" ]; then
+			echo -n "Specify The Kernel version to be used:"
+			read -r VeRSioN
+			cd linux -$VeRSioN || exit
+		fi
+		cd linux-$VeRSioN 2>/dev/null || cd /Dev/Kernel/linux-$VeRSioN || exit
+		apt install linux-source -y
+		echo -n "Enter path to linux source certificates (ex: /usr/src/linux-source-$VeRSioN/debian/*): "
+		read -r CeRTiFiCaTeS
+		rsync -axHAX $CeRTiFiCaTeS debian
+		mkdir -p ../certificates
+		rsync -axHAX $CeRTiFiCaTeS ../certificates/debian
+		cd /Dev/Kernel || exit
+		read -p "Press enter to return to main menu..."
+		;;
+	6)
+		cd /Dev/Kernel/linux-$VeRSioN 2>/dev/null || cd linux-$VeRSioN || { echo "Extract source first!"; read -p "Press enter..."; continue; }
+		echo -n "Enter full path to kernel .config file (ex: /boot/config-$(uname -r)): "
+		read -r SRCCoNFiG
+		rsync -axHAX "$SRCCoNFiG" .config
+		mkdir -p ../srcconfig
+		rsync -axHAX "$SRCCoNFiG" ../srcconfig/.config
+		cd /Dev/Kernel || exit
+		read -p "Press enter to continue..."
+		;;
+	7)
+		cd /Dev/Kernel/linux-$VeRSioN 2>/dev/null || cd linux-$VeRSioN || { echo "Extract source first!"; read -p "Press enter..."; continue; }
+		make menuconfig
+		cd /Dev/kernel || exit
+		read -p "Press enter to continue to main menu..."
+		;;
+	8)
+		cd /Dev/Kernel/linux-$VeRSioN 2>/dev/null || cd linux-$VeRSioN || { echo "Extract source first!"; read -p "Press enter..."; continue; }
+		echo -n "Print number of CPU cores to utilize for compiling: "
+		read -r CPN
+		make -j "$CPN"
+		cd /Dev/Kernel || exit
+		read -p "press enter to return to main menu..."
+		;;
+	9)
+		cd /Dev/Kernel/linux-$VeRSioN 2>/dev/null || cd linux-$VeRSioN || { echo "Extract source first!"; read -p "Press enter..."; continue; }
+		make modules
+		cd /Dev/Kernel || exit
+		read -p "Press enter to continue..."
+		;;
+	10)
+		cd /Dev/Kernel/linux-$VeRSioN 2>/dev/null || cd linux-$VeRSioN || { echo "Extract source first!"; read -p "Press enter..."; continue; }
+		make INSTALL_MOD_STRIP=1 modules_install
+		cd /Dev/Kernel || exit
+		read -p "Press enter to continue..."
+		;;
+	11)
+		cd /Dev/Kernel/linux-$VeRSioN 2>/dev/null || cd linux-$VeRSioN || { echo "Extract source first!"; read -p "Press enter..."; continue; }
+		make install
+		cd /Dev/Kernel || exit
+		read -p "Press enter to continue..."
+		;;
+	12)
+		cd /Dev/Kernel/linux-$VeRSioN 2>/dev/null || cd linux-$VeRSioN || { echo "Extract source first!"; read -p "Press enter..."; continue; }
+		make clean
+		cd /Dev/Kernel || exit
+		echo "Build environment cleaned."
+		read -p "Press enter to continue..."
+		;;
+	13)
+		echo "Running full automated sequence..." #### Cascades through required functions sequentially
+		echo type the kernel version desired ex: 6.7.9 
+		echo then press enter to continue...
+		read VeRSioN
+		echo apt-get installing prerequisits for build...
+		apt-get install build-essential libncurses-dev bison flex libssl-dev libelf-dev -y
+		download_with_check "https://www.kernel.org/pub/linux/kernel/v6.x/linux-$VeRSioN.tar.xz" "linux-$VeRSioN.tar.xz"
+		download_with_check "https://www.kernel.org/pub/linux/kernel/v6.x/linux-$VeRSioN.tar.sign" "linux-$VeRSioN.tar.sign"
+		download_with_check "https://www.kernel.org/pub/linux/kernel/v6.x/patch-$VeRSioN.xz" "patch-$VeRSioN.xz"
+		echo Checking Signature.xz:
+		gpg --verify linux-$VeRSioN.tar.xz
+		echo paste the signature below: and then press enter to continue.
+		read SiGNaTuRe
+		echo Checking Signature.sign:
+		gpg --verify linux-$VeRSioN.tar.sign
+		echo paste the signature below: and then press enter to continue.
+		read SiGNaTuRe
+		echo Uncompressing...
+		unxz -v linux-$VeRSioN.tar.xz
+		echo Recieving keys for verification?...
+		gpg --recv-keys $SiGNaTuRe
+		echo Re-Verifying 
+		gpg --verify linux-$VeRSioN.tar.sign
+		echo NOTE: If you get "BAD SIGNAURE" or equivalent, Press cntrl+c or whatevs close the window, there is an error.
+		echo unarchiving...
+		tar xvf linux-$VeRSioN.tar
+		cd linux-$VeRSioN
+		echo "activating su for applying patch, etc(optional)"
+		su
+		echo Enter full path to kernel .config file, for example /boot/config-$(uname -r)
+		echo Press enter to continue...
+		read SRCCoNFiG
+		rsync -axHAX $SRCCoNFiG .config
+		mkdir ../srcconfig
+		rsync -axHAX $SRCCoNFiG ../srcconfig/.config
+		echo save config after any desired changes are made.
+		make menuconfig
+		echo installing linux-source for certificates
+		apt install linux-source -y
+		echo enter path to linux source certificates: ex. /usr/src/linux-source-$VeRSioN/debian/*
+		read CeRTiFiCaTeS
+		rsync -axHAX $CeRTiFiCaTeS debian
+		mkdir ../certificates
+		rsync -axHAX $CeRTiFiCaTeS ../certificates/debian
+		echo print number of cpu cores to utilize for compiling, and press enter...
+		read CPN
+		echo cleaning build environment:
+		make clean
+		echo 'Beginning main build Process...(stage 1)'
+		make -j $CPN
+		echo 'was there an error, if so stop script to debug, else, continue...(stage 2)'
+		make modules
+		echo Utilizing INSTALL_MOD_STRIP=1 flag because better alternate process not located.
+		make INSTALL_MOD_STRIP=1 modules_install
+		echo installing kernel...
+		make install
+		echo "to do: file cleanup(optional)"
+		########################################################################################
+		# to build into a deb for use on multiple systems or later reuse:                      #
+		# make -kpkg clean                                                                     #
+		# fakeroot make-mpkg --initrd --append-to-version=-custom kernel_image kernel_headers  #
+		# make modules                                                                         #
+		# make modules_install                                                                 #
+		########################################################################################
+		read -p "Full automation sequence placeholder. Press enter..." # (Can be expanded to call individual routines back-to-back)
+		;;
+	14)
+		echo "Spawning root shell via su..."
+		su
+		;;
+	16)
+		echo "/Dev/Kernel/:"
+		ls /Dev/Kernel
+		echo "/Dev/Kernel/linux-$VeRSioN/:"
+		ls /Dev/Kernel/linux-$VeRSioN
+		read -p "Press enter to return to main menu..."
+		;;
+	17)
+		echo "1/3"
+		echo "Specify Device: ex. '/dev/sda'"
+		read devxx
+		echo "2/3"
+		grub-install $devxx
+		echo "3/3"
+		update-grub
+		;;
+	18)
+		echo "18" #debootstrap list versions
+		echo "specify direcory to install debootstrap to: ex. /Dev/osTemple/customdistro"
+		read dbsdir
+		mkdir -p $dbsdir
+		ls $dbsdir
+		cd $dbsdir
+		cd .. #url
+		echo "use debootstrap command & manpages, etc.(optional)"
+		su 
+		echo "add full mounts(dev,pts,sys,proc) fstab for host system[+cp resolv,hosts] 4 boot? [y/n]"
+		read fstadd
+		if [ "$fstadd" = "y" ]; then
+			echo "dev $dbsdir/dev dev defaults 0 0" >> /etc/fstab
+			echo "dev/pts $dbsdir/dev/pts pts defaults 0 0" >> /etc/fstab
+			echo "sys $dbsdir/sys sys defaults 0 0" >> /etc/fstab
+			echo "proc $dbsdir/proc proc defaults 0 0" >> /etc/fstab
+			cp /etc/resolv.conf $fstadd/resolv.conf 
+			cp /etc/hosts $fstadd/etc/hosts
+		else
+			echo ""
+		fi
+		echo "press any key to return to main menu..."
+
+		;;
+	19|20)
+		echo "$option placeholder."
+		read -p "Press enter..."
+		;;
+	21|22|23)
+		echo "Option $option placeholder."
+		read -p "Press enter to continue..."
+		;;
+	24|25|26|27|28|29)
+		echo "An option $option placeholder."
+		read -p "Press enter to return to main menu..."
+		;;
+	30|31|32|33|34|35|36|37|38)
+		echo "It's an option $option placeholder."
+		read -p "Press enter to continue and return to main menu..."
+		;;
+	39|40|41|42|43|44|45|46|47|48)
+		echo "So it's an option $option placeholder."
+		read -p "Press enter to continue this program and return to the main menu..."
+		;;
+		15)
+		echo "Exiting script. Goodbye!"
+		exit 0
+		;;
+	* ) 
+		echo "Invalid option, please choose between 0 and 26."
+		sleep 2
+		;;
+	esac
+done
+
+###
+echo type the kernel version desired ex: 6.7.9 
+echo then press enter to continue...
+read VeRSioN
+echo apt-get installing prerequisits for build...
+apt-get install build-essential libncurses-dev bison flex libssl-dev libelf-dev -y
+download_with_check "https://www.kernel.org/pub/linux/kernel/v6.x/linux-$VeRSioN.tar.xz" "linux-$VeRSioN.tar.xz"
+download_with_check "https://www.kernel.org/pub/linux/kernel/v6.x/linux-$VeRSioN.tar.sign" "linux-$VeRSioN.tar.sign"
+download_with_check "https://www.kernel.org/pub/linux/kernel/v6.x/patch-$VeRSioN.xz" "patch-$VeRSioN.xz"
+echo Checking Signature.xz:
+gpg --verify linux-$VeRSioN.tar.xz
+echo paste the signature below: and then press enter to continue.
+read SiGNaTuRe
+echo Checking Signature.sign:
+gpg --verify linux-$VeRSioN.tar.sign
+echo paste the signature below: and then press enter to continue.
+read SiGNaTuRe
+echo Uncompressing...
+unxz -v linux-$VeRSioN.tar.xz
+echo Recieving keys for verification?...
+gpg --recv-keys $SiGNaTuRe
+echo Re-Verifying 
+gpg --verify linux-$VeRSioN.tar.sign
+echo NOTE: If you get "BAD SIGNAURE" or equivalent, Press cntrl+c or whatevs close the window, there is an error.
+echo unarchiving...
+tar xvf linux-$VeRSioN.tar
+cd linux-$VeRSioN
+echo "activating su for applying patch, etc(optional)"
+su
+echo Enter full path to kernel .config file, for example /boot/config-$(uname -r)
+echo Press enter to continue...
+read SRCCoNFiG
+rsync -axHAX $SRCCoNFiG .config
+mkdir ../srcconfig
+rsync -axHAX $SRCCoNFiG ../srcconfig/.config
+echo save config after any desired changes are made.
+make menuconfig
+echo installing linux-source for certificates
+apt install linux-source -y
+echo enter path to linux source certificates: ex. /usr/src/linux-source-$VeRSioN/debian/*
+read CeRTiFiCaTeS
+rsync -axHAX $CeRTiFiCaTeS debian
+mkdir ../certificates
+rsync -axHAX $CeRTiFiCaTeS ../certificates/debian
+echo print number of cpu cores to utilize for compiling, and press enter...
+read CPN
+echo cleaning build environment:
+make clean
+echo 'Beginning main build Process...(stage 1)'
+make -j $CPN
+echo 'was there an error, if so stop script to debug, else, continue...(stage 2)'
+make modules
+echo Utilizing INSTALL_MOD_STRIP=1 flag because better alternate process not located.
+make INSTALL_MOD_STRIP=1 modules_install
+echo installing kernel...
+make install
+echo "to do: file cleanup(optional)"
+
+########################################################################################
+# to build into a deb for use on multiple systems or later reuse:                      #
+# make -kpkg clean                                                                     #
+# fakeroot make-mpkg --initrd --append-to-version=-custom kernel_image kernel_headers  #
+# make modules                                                                         #
+# make modules_install                                                                 #
+########################################################################################
